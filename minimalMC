@@ -1,0 +1,352 @@
+markovchainFit <- function(data) {
+  # Check if the input is a numeric vector
+  if (!is.numeric(data)) {
+    stop("Input data must be a numeric vector.")
+  }
+  
+  states <- unique(data)
+  # Determine the number of unique states
+  num_states <- length(states)
+  
+  # Initialize the transition matrix with zeros
+  transition_matrix <- matrix(0, nrow = num_states, ncol = num_states,dimnames = list(states,states))
+  
+  # Fill in the transition matrix based on observed transitions
+  for (i in 2:length(data)) {
+    current_state <- data[i - 1]
+    next_state <- data[i]
+    transition_matrix[current_state, next_state] <- transition_matrix[current_state, next_state] + 1
+  }
+  
+  # Normalize the transition matrix to obtain transition probabilities
+  row_sums <- rowSums(transition_matrix)
+  transition_matrix <- transition_matrix / row_sums
+  
+  # Create a list to store the result
+  result <- list(
+    data = data,
+    states = states,
+    transition_matrix = transition_matrix
+  )
+  
+  return(result)
+}
+
+
+adjust_to_0_5_linear <- function(i, factor) {
+  exp <- {factor==1}
+  if (exp) {
+    i
+  } else {
+    return (0.5 + (i - 0.5) * factor)
+  }
+}
+markovchainFit2 <- function(data, confidence_level = 0.95) {
+  # Check if the input is a numeric vector
+  # if (!is.list(data)) {
+  #   stop("Input data must be a numeric vector.")
+  # }
+  
+  states <- unique(unlist(data))
+  # Determine the number of unique states
+  num_states <- length(states)
+  
+  # Initialize the transition matrix with zeros
+  transition_matrix <- matrix(0, nrow = num_states, ncol = num_states,dimnames = list(states,states))
+  
+  # Fill in the transition matrix based on observed transitions
+  for(el in data){
+    for (i in 2:length(el)) {
+      current_state <- el[i - 1]
+      next_state <- el[i]
+      transition_matrix[current_state, next_state] <- transition_matrix[current_state, next_state] + 1
+    }
+    
+  }
+  
+  
+  # Normalize the transition matrix to obtain transition probabilities
+  row_sums <- rowSums(transition_matrix)
+  transition_matrix <-adjust_to_0_5_linear(transition_matrix / row_sums, confidence_level)
+  
+  # Create a list to store the result
+  result <- list(
+    data = data,
+    states = states,
+    transition_matrix = transition_matrix
+  )
+  
+  return(result)
+}
+
+predict <- function(transition_matrix, initial_observation, N) {
+  
+  # Check if the initial observation is valid
+  if (initial_observation < 1 || initial_observation > nrow(transition_matrix)) {
+    stop("Initial observation is out of range.")
+  }
+  
+  # Initialize a vector to store the predictions
+  predictions <- numeric(N)
+  
+  # Set the initial state
+  current_state <- initial_observation
+  
+  # Generate N predictions
+  for (i in 1:N) {
+    # Sample the next state based on the transition probabilities
+    next_state_probs <- transition_matrix[current_state, ]
+    next_state <- sample(1:length(next_state_probs), size = 1, prob = next_state_probs)
+    
+    # Store the prediction
+    predictions[i] <- next_state
+    
+    # Update the current state
+    current_state <- next_state
+  }
+  
+  return(predictions)
+}
+
+
+
+
+likelihood <- function(transition_matrix, observed_sequence) {
+  # Check if the observed_sequence is a numeric vector
+  if (!is.numeric(observed_sequence)) {
+    stop("Observed sequence must be a numeric vector.")
+  }
+  
+  # Check if the observed sequence is not empty
+  if (length(observed_sequence) < 2) {
+    stop("Observed sequence must contain at least two states.")
+  }
+  
+  # Initialize the likelihood
+  likelihood_value <- 1
+  
+  # Calculate the likelihood of the observed sequence
+  for (i in 2:length(observed_sequence)) {
+    current_state <- observed_sequence[i - 1]
+    next_state <- observed_sequence[i]
+    
+    # Check if the states are within the range of the transition matrix
+    if (current_state < 1 || current_state > nrow(transition_matrix) ||
+        next_state < 1 || next_state > nrow(transition_matrix)) {
+      stop("Observed sequence contains out-of-range states.")
+    }
+    
+    # Retrieve the transition probability
+    transition_prob <- transition_matrix[current_state, next_state]
+    
+    # Multiply the likelihood by the transition probability
+    likelihood_value <- likelihood_value * transition_prob
+  }
+  
+  return(likelihood_value)
+}
+
+loglikelihood <- function(sequence, transition_matrix) {
+  log_prob <- 0
+  current_state <- sequence[1]
+  
+  for (i in 2:length(sequence)) {
+    next_state <- sequence[i]
+    transition_prob <- transition_matrix[current_state, next_state]
+    
+    # If the transition probability is 0, you might want to handle this case to avoid log(0)
+    if (transition_prob == 0) {
+      log_prob <- -Inf  # Assign a very low log-probability
+      break
+    }
+    
+    log_prob <- log_prob + log(transition_prob)
+    current_state <- next_state
+  }
+  
+  return(log_prob)
+}
+
+
+chapmanKolmogorov <- function(transition_matrix, n_steps) {
+  current_matrix <- transition_matrix
+  
+  for (step in 1:n_steps) {
+    current_matrix <- current_matrix %*% transition_matrix
+  }
+  
+  return(current_matrix)
+}
+
+chapmanKolmogorovProbability <- function(transition_matrix, n_steps, initial_state, target_state) {
+  current_matrix <- transition_matrix
+  
+  for (step in 1:n_steps) {
+    current_matrix <- current_matrix %*% transition_matrix
+  }
+  
+  probability <- current_matrix[initial_state, target_state]  # +1 to adjust for 0-based indexing
+  
+  return(probability)
+}
+
+
+##
+corpus.nettoyer <- function(x){
+  x <- tolower(x)
+  
+  x <- gsub("@\\w+", " ", x) # chaine.enlever.arobase(x)
+  x <- gsub("https?://.+", "", x)  # chaine.enlever.url(x)
+  x <- gsub("#\\w+", " ", x) # chaine.enlever.hashtag(x)
+  x <- gsub("[ |\t]+", " ", x) # chaine.enlever.tabulation(x)
+  x <- gsub("[\\-]", " ",x) # chaine.enlever.tiret(x)
+  x <- gsub("\r", "", x) # chaine.remplacer.bcksp.n(x)
+  x <- gsub("\n", " ", x)  # chaine.remplacer.bcksp.r(x)
+  x <- gsub("^\\s+", "", x) # chaine.enlever.espace.g(x)
+  x <- gsub("\\s+$", "", x) # chaine.enlever.espace.d(x)
+  x <- gsub("[_]", "", x) # chaine.enlever.espace.d(x)
+  x <- gsub("[\\.]{2,}", " . ",x)  #enlever.troispoints
+  x <- gsub("[.]", " : ", x) #  chaine.remplacer.point(x)
+  x <- gsub("[;]", " , ",x) # chaine.remplacer.pointvirgule(x)
+  x <- gsub("[!]", " ! " ,x)  # chaine.remplacer.pointexclamation(x)
+  x <- gsub("[\\?]", " ? " ,x) # chaine.remplacer.pointinterrogation(x)
+  x <- gsub("[,]", " , ", x) # chaine.remplacer.virgule(x)
+  x <- gsub("[’]", " ' ", x) # chaine.remplacer.apostrophee(x)
+  x <- gsub("[:]", " ", x) # chaine.enlever.deuxpoints(x)
+  x <- gsub("  ", " ", x) # chaine.enlever.deuxpoints(x)
+  x <- gsub("   ", " ", x) # chaine.enlever.deuxpoints(x)
+  
+  x <- gsub("[«]", " \" ", x) # chaine.enlever.guillemets.g(x)
+  x <- gsub("[»]", " \" ", x) # chaine.enlever.guillemets.d(x)
+  x <- gsub("[…]", " . ", x) # chaine.enlever.troispoints2(x)
+  # x <- gsub("[’|']", " ", x) # chaine.enlever.apostrophe(x)
+  # x <- gsub("[\"]", " ", x)  # chaine.enlever.guillemets(x)
+
+  return(x)
+}
+##
+
+## Example usage:
+
+
+library(readr)
+library(stringr)
+library(stringi)
+corpus <- read_file("corpus/originedesespeces.txt")
+corpus <- corpus.nettoyer(corpus)
+
+# corpus <- corpus.nettoyer(corpus)
+corpus <- gsub("\\s+", " ", corpus)
+# write(corpus,"corpus/")
+corpus <- strsplit(corpus, split = " ")[[1]]
+corpus
+data <- corpus
+fac <- factor(data)
+num <- as.numeric(fac)
+
+mc <- markovchainFit(num)
+
+pt <- which(levels(fac)==".")
+out <- list()
+tmp <- c()
+for (i in 1:length(num)){
+  if (num[i]!=3){
+    tmp <- append(tmp, num[i])
+  } else {
+    out <- append(out, tmp)
+    tmp <- c()
+  }
+}
+tmp
+out
+# corpus <- strsplit(corpus, split = " [.] ")[[1]]
+# corpus <- lapply(corpus, strsplit, split = " ")
+# corpus <- as.list(corpus)
+# 
+# 
+# groupes <- split(vecteur, cumsum(vecteur == 1))
+
+# mots <- str_extract_all(corpus, "\\S+")[[1]]
+# troncons <- lapply(seq(1, length(mots), by = 2), function(i) {
+#   paste(mots[i:min(i + 2 - 1, length(mots))], collapse = " ")
+# })
+# resultat <- unlist(troncons)
+# resultat <- stri_sub(corpus, from = seq(1, nchar(corpus), by = 2), length = 2)
+# corpus <- tokenizer.chaine(corpus,1)
+
+data <- unlist(corpus)
+fac <- factor(data)
+num <- as.numeric(fac)
+
+markovchain1 <- markovchainFit(data = num)
+
+initial_observation <- which(levels(fac)=="le")  
+startSentenceValue = which(levels(fac)=="#")
+endSentenceValue = which(levels(fac)==".")
+N <- 100
+predicted_values <- predict(mc$transition_matrix, initial_observation, N)
+
+newcharvar <- c(levels(fac)[initial_observation] , levels(fac)[predicted_values])
+paste(newcharvar, collapse = " ")
+#  
+# #  
+# fun1 <- function(){
+#   cur <- startSentenceValue
+#   out <- c()
+#   while (cur != endSentenceValue){
+#     cur <- predict2(markovchain1$transition_matrix, cur, 1)
+#     out <- append(out, cur)
+#   }
+#   return(out)
+# }
+# predicted_values <- fun1()
+# newcharvar <- levels(fac)[predicted_values]
+# cat(levels(fac)[startSentenceValue], (paste(newcharvar, collapse = " ")))
+# ## on genere un grand nombre de predictions et on vérifie laquelle est la plus "likely"
+# 
+# outputVec <- c()
+# outputRate <- 0
+# for (i in 1:50) {
+# 
+#   tmpVec <-  fun1()
+#   while (length(tmpVec)<4){
+#     tmpVec <-  fun1()
+#   }
+#   tmpRate <- likelihood(fit_result$transition_matrix, tmpVec)
+#   if (tmpRate > outputRate) {
+#     outputVec <- tmpVec
+#     outputRate <- tmpRate}
+# }
+# cat(levels(fac)[initial_observation],paste(levels(fac)[outputVec], collapse = " "),"\n",format(outputRate,scientific = FALSE))
+
+# ##likelihood
+# lh <- likelihood2(fit_result$transition_matrix,observed_sequence = c(1,2,3))
+# 
+# ##expectedtime
+# iState <- which(levels(fac)=="un")
+# tState <- which(levels(fac)=="nid")
+# et <- expectedTime(fit_result$transition_matrix,iState,tState)
+# cat(et,"\n",format(et, scientific= FALSE))
+## chapmankomogorov exemple :
+
+# # Compute the transition probability matrix after 3 time steps
+# n_steps <- 3
+# fit_result$result_matrix <- chapmanKolmogorov(fit_result$transition_matrix, n_steps)
+# #
+# # Print the result
+# print(result_matrix)
+
+##
+
+## chapmanKolmogorovProbability exemple :
+# # 
+# # Define the initial and target states (0-based indexing)
+# initial_state <- 595
+# target_state <- 232
+# 
+# # Compute the probability of transitioning from the initial state to the target state after 3 time steps
+# n_steps <- 0
+# probability <- chapmanKolmogorovProbability(fit_result$transition_matrix, n_steps, initial_state, target_state)
+# 
+# # Print the result
+# print(paste("Probability of transitioning from state", initial_state, "to state", target_state, "after", n_steps, "steps:", probability))
